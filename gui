@@ -1,0 +1,596 @@
+#!/usr/bin/env python3
+
+# Script GUI per iSH basato su Alpine Linux
+# Implementazione di un desktop con menu start a cascata, file manager e utilità
+
+import os
+import subprocess
+import dialog
+import shutil
+from datetime import datetime
+
+# Inizializza l'oggetto Dialog
+d = dialog.Dialog(dialog="dialog")
+
+# Variabili globali
+CURRENT_DIR = os.path.expanduser("~")  # Directory home dell'utente
+USER = os.getlogin()  # Nome utente corrente
+LOG_FILE = os.path.join(CURRENT_DIR, "script_log.txt")
+
+# Inizializza il file di log
+with open(LOG_FILE, "w") as log:
+    log.write(f"Script avviato da {USER} il {datetime.now()}\n")
+
+# Funzione per verificare la presenza di un comando nel sistema
+def check_command(command):
+    return shutil.which(command) is not None
+
+# Funzione per il File Manager
+def file_manager():
+    global CURRENT_DIR
+    while True:
+        file_path = d.fselect(CURRENT_DIR, height=14, width=48)
+        if file_path[0] == 0:  # Se l'utente ha selezionato un file
+            file = file_path[1]
+            if os.path.isdir(file):
+                CURRENT_DIR = file
+                os.chdir(CURRENT_DIR)  # Cambia la directory di lavoro
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Directory cambiata in: {CURRENT_DIR}\n")
+            elif os.path.isfile(file):
+                scelta = d.menu(f"File: {file}", choices=[
+                    ("1", "Visualizza"),
+                    ("2", "Esegui"),
+                    ("3", "Elimina"),
+                    ("4", "Copia"),
+                    ("5", "Torna")
+                ], height=12, width=50, menu_height=5)
+                if scelta[0] == 0:
+                    continue
+                opzione = scelta[1]
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Scelta opzione {opzione} per il file {file}\n")
+                if opzione == "1":
+                    try:
+                        with open(file, "r") as f:
+                            d.textbox(f.name, height=20, width=70)
+                    except Exception as e:
+                        d.msgbox(f"Errore lettura: {str(e)}", height=5, width=40)
+                elif opzione == "2":
+                    if os.access(file, os.X_OK):
+                        result = subprocess.run([file], capture_output=True, text=True)
+                        d.textbox_from_str(f"Output:\n{result.stdout}\nErrori:\n{result.stderr}", height=20, width=70)
+                        with open(LOG_FILE, "a") as log:
+                            log.write(f"Eseguito file: {file}\n")
+                    else:
+                        d.msgbox("Il file non è eseguibile", height=5, width=40)
+                elif opzione == "3":
+                    if d.yesno(f"Elimina {file}?", height=7, width=50) == d.OK:
+                        os.remove(file)
+                        with open(LOG_FILE, "a") as log:
+                            log.write(f"Eliminato {file}\n")
+                        d.msgbox(f"File {file} eliminato", height=5, width=40)
+                elif opzione == "4":
+                    dest = d.inputbox("Destinazione:", height=8, width=40)
+                    if dest[0] == 0 and dest[1]:
+                        subprocess.run(["cp", file, dest[1]])
+                        with open(LOG_FILE, "a") as log:
+                            log.write(f"Copiato {file} in {dest[1]}\n")
+                        d.msgbox(f"File copiato in {dest[1]}", height=5, width=40)
+                elif opzione == "5":
+                    break
+        else:
+            break
+
+# Funzione per creare un file
+def crea_file():
+    percorso = d.inputbox("Percorso file:", height=8, width=40)
+    if percorso[0] == 0 and percorso[1]:
+        try:
+            open(percorso[1], "a").close()
+            d.msgbox(f"File creato: {percorso[1]}", height=5, width=50)
+            with open(LOG_FILE, "a") as log:
+                log.write(f"Creato file: {percorso[1]}\n")
+        except Exception as e:
+            d.msgbox(f"Errore creazione: {str(e)}", height=5, width=50)
+
+# Funzione per eseguire comandi
+def esegui_comando():
+    comando = d.inputbox("Comando:", height=8, width=40)
+    if comando[0] == 0 and comando[1]:
+        scelta_background = d.yesno("Eseguire in background?", height=7, width=50)
+        if scelta_background == d.OK:
+            subprocess.Popen(comando[1], shell=True)
+            d.msgbox(f"Comando '{comando[1]}' eseguito in background", height=5, width=50)
+            with open(LOG_FILE, "a") as log:
+                log.write(f"Eseguito in background: {comando[1]}\n")
+        else:
+            result = subprocess.run(comando[1], shell=True, capture_output=True, text=True)
+            d.textbox_from_str(f"Output:\n{result.stdout}\nErrori:\n{result.stderr}", height=20, width=70)
+            with open(LOG_FILE, "a") as log:
+                log.write(f"Eseguito comando: {comando[1]}\n")
+
+# Funzione per impostazioni di sistema
+def impostazioni_sistema():
+    global CURRENT_DIR
+    while True:
+        scelta = d.menu("Impostazioni:", choices=[
+            ("1", "Cambia directory"),
+            ("2", "Variabili ambiente"),
+            ("3", "Esporta variabile"),
+            ("4", "Gestisci pacchetti"),
+            ("5", "Configura rete"),
+            ("6", "Data e ora"),
+            ("7", "Torna")
+        ], height=15, width=50, menu_height=7)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione impostazioni: {opzione}\n")
+        if opzione == "1":
+            dir_path = d.inputbox("Nuova directory:", height=8, width=40)
+            if dir_path[0] == 0 and os.path.isdir(dir_path[1]):
+                CURRENT_DIR = dir_path[1]
+                os.chdir(CURRENT_DIR)
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Directory cambiata: {CURRENT_DIR}\n")
+                d.msgbox(f"Directory cambiata in {CURRENT_DIR}", height=5, width=40)
+            else:
+                d.msgbox("Directory non valida", height=5, width=40)
+        elif opzione == "2":
+            env_text = "\n".join([f"{k}={v}" for k, v in os.environ.items()])
+            d.textbox_from_str(env_text, height=20, width=70)
+        elif opzione == "3":
+            var = d.inputbox("Nome variabile:", height=8, width=40)
+            if var[0] == 0:
+                val = d.inputbox("Valore:", height=8, width=40)
+                if val[0] == 0:
+                    os.environ[var[1]] = val[1]
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Esportata variabile {var[1]}={val[1]}\n")
+                    d.msgbox(f"Variabile {var[1]} impostata", height=5, width=40)
+        elif opzione == "4":
+            pkg_scelta = d.menu("Gestione pacchetti:", choices=[
+                ("1", "Aggiorna"),
+                ("2", "Installa"),
+                ("3", "Rimuovi"),
+                ("4", "Torna")
+            ], height=12, width=50, menu_height=4)
+            if pkg_scelta[0] != 0:
+                if pkg_scelta[1] == "1":
+                    result = subprocess.run(["apk", "update"], capture_output=True, text=True)
+                    d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                    with open(LOG_FILE, "a") as log:
+                        log.write("Aggiornamento pacchetti eseguito\n")
+                elif pkg_scelta[1] == "2":
+                    pkg = d.inputbox("Nome pacchetto:", height=8, width=40)
+                    if pkg[0] == 0:
+                        result = subprocess.run(["apk", "add", pkg[1]], capture_output=True, text=True)
+                        d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                        with open(LOG_FILE, "a") as log:
+                            log.write(f"Installato pacchetto: {pkg[1]}\n")
+                elif pkg_scelta[1] == "3":
+                    pkg = d.inputbox("Nome pacchetto:", height=8, width=40)
+                    if pkg[0] == 0:
+                        result = subprocess.run(["apk", "del", pkg[1]], capture_output=True, text=True)
+                        d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                        with open(LOG_FILE, "a") as log:
+                            log.write(f"Rimosso pacchetto: {pkg[1]}\n")
+        elif opzione == "5":
+            net_scelta = d.menu("Configurazione rete:", choices=[
+                ("1", "Stato rete"),
+                ("2", "Test connessione"),
+                ("3", "Torna")
+            ], height=12, width=50, menu_height=3)
+            if net_scelta[0] != 0:
+                if net_scelta[1] == "1":
+                    result = subprocess.run(["ip", "a"], capture_output=True, text=True)
+                    d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                elif net_scelta[1] == "2":
+                    result = subprocess.run(["ping", "-c", "4", "8.8.8.8"], capture_output=True, text=True)
+                    d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+        elif opzione == "6":
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            d.msgbox(f"Data e ora: {current_time}", height=5, width=40)
+        elif opzione == "7":
+            break
+
+# Funzione per informazioni di sistema
+def info_sistema():
+    info = (f"Sistema: {os.uname().sysname} {os.uname().release}\n"
+            f"Kernel: {os.uname().version}\n"
+            f"Uptime: {subprocess.run(['uptime'], capture_output=True, text=True).stdout.strip()}\n"
+            f"Disco:\n{subprocess.run(['df', '-h'], capture_output=True, text=True).stdout}\n"
+            f"Memoria:\n{subprocess.run(['free', '-m'], capture_output=True, text=True).stdout}\n"
+            f"Utente: {USER}\nDir: {os.getcwd()}")
+    d.msgbox(info, height=20, width=70)
+
+# Funzione per browser internet
+def browser_internet():
+    if not check_command("lynx"):
+        d.msgbox("lynx non è installato. Installalo con 'apk add lynx'.", height=5, width=40)
+        return
+    preferiti_file = os.path.join(CURRENT_DIR, "preferiti.txt")
+    while True:
+        scelta = d.menu("Browser Internet:", choices=[
+            ("1", "Visita URL o file HTML"),
+            ("2", "Aggiungi preferito"),
+            ("3", "Vedi preferiti"),
+            ("4", "Torna")
+        ], height=12, width=50, menu_height=4)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione browser: {opzione}\n")
+        if opzione == "1":
+            input_str = d.inputbox("URL o percorso file HTML:", height=8, width=40)
+            if input_str[0] == 0 and input_str[1]:
+                if os.path.exists(input_str[1]) and input_str[1].endswith((".html", ".htm")):
+                    result = subprocess.run(["lynx", input_str[1]], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        d.msgbox("Errore apertura file HTML", height=5, width=40)
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Aperto file HTML locale: {input_str[1]}\n")
+                else:
+                    result = subprocess.run(["lynx", input_str[1]], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        d.msgbox("Errore apertura URL", height=5, width=40)
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Visitato URL: {input_str[1]}\n")
+        elif opzione == "2":
+            url = d.inputbox("URL da salvare:", height=8, width=40)
+            if url[0] == 0 and url[1]:
+                with open(preferiti_file, "a") as f:
+                    f.write(f"{url[1]}\n")
+                d.msgbox(f"URL {url[1]} aggiunto ai preferiti", height=5, width=40)
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Aggiunto preferito: {url[1]}\n")
+        elif opzione == "3":
+            if os.path.exists(preferiti_file):
+                with open(preferiti_file, "r") as f:
+                    d.textbox(f.name, height=20, width=70)
+            else:
+                d.msgbox("Nessun preferito salvato", height=5, width=40)
+        elif opzione == "4":
+            break
+
+# Funzione per lettore MP3
+def lettore_mp3():
+    if not check_command("mpg123"):
+        d.msgbox("mpg123 non è installato. Installalo con 'apk add mpg123'.", height=5, width=40)
+        return
+    while True:
+        scelta = d.menu("Lettore MP3:", choices=[
+            ("1", "Riproduci file MP3"),
+            ("2", "Torna")
+        ], height=10, width=50, menu_height=2)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione lettore MP3: {opzione}\n")
+        if opzione == "1":
+            file = d.fselect(CURRENT_DIR, height=14, width=48)
+            if file[0] == 0 and file[1]:
+                if file[1].endswith(".mp3"):
+                    result = subprocess.run(["mpg123", file[1]], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        d.msgbox("Riproduzione completata", height=5, width=40)
+                    else:
+                        d.msgbox(f"Errore riproduzione: {result.stderr}", height=5, width=40)
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Riprodotto file MP3: {file[1]}\n")
+                else:
+                    d.msgbox("Seleziona un file MP3 valido", height=5, width=40)
+        elif opzione == "2":
+            break
+
+# Funzione per calcolatrice
+def calcolatrice():
+    if not check_command("bc"):
+        d.msgbox("bc non è installato. Installalo con 'apk add bc'.", height=5, width=40)
+        return
+    esp = d.inputbox("Espressione matematica:", height=8, width=40)
+    if esp[0] == 0 and esp[1]:
+        try:
+            result = subprocess.run(["bc", "-l"], input=esp[1], capture_output=True, text=True)
+            if result.returncode == 0:
+                d.msgbox(f"Risultato: {result.stdout}", height=5, width=40)
+            else:
+                d.msgbox(f"Errore: {result.stderr}", height=5, width=40)
+            with open(LOG_FILE, "a") as log:
+                log.write(f"Calcolata espressione: {esp[1]}\n")
+        except Exception as e:
+            d.msgbox(f"Errore calcolo: {str(e)}", height=5, width=40)
+
+# Funzione per editor di testo
+def editor_testo():
+    if not check_command("nano"):
+        d.msgbox("nano non è installato. Installalo con 'apk add nano'.", height=5, width=40)
+        return
+    file = d.fselect(CURRENT_DIR, height=14, width=48)
+    if file[0] == 0 and file[1]:
+        if not os.path.exists(file[1]):
+            if d.yesno(f"Creare {file[1]}?", height=7, width=50) == d.OK:
+                open(file[1], "a").close()
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Creato file per modifica: {file[1]}\n")
+        subprocess.run(["nano", file[1]])
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Modificato file con nano: {file[1]}\n")
+
+# Funzione per debug e aggiornamento
+def debug_aggiornamento():
+    while True:
+        scelta = d.menu("Debug e aggiornamento:", choices=[
+            ("1", "Aggiorna sistema"),
+            ("2", "Lista pacchetti"),
+            ("3", "Log di sistema"),
+            ("4", "Test rete"),
+            ("5", "Torna")
+        ], height=15, width=50, menu_height=5)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione debug: {opzione}\n")
+        if opzione == "1":
+            result = subprocess.run(["apk", "update"], capture_output=True, text=True)
+            result2 = subprocess.run(["apk", "upgrade"], capture_output=True, text=True)
+            d.textbox_from_str(result.stdout + result.stderr + result2.stdout + result2.stderr, height=20, width=70)
+            with open(LOG_FILE, "a") as log:
+                log.write("Sistema aggiornato\n")
+        elif opzione == "2":
+            result = subprocess.run(["apk", "info"], capture_output=True, text=True)
+            d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+        elif opzione == "3":
+            result = subprocess.run(["dmesg"], capture_output=True, text=True)
+            if result.stdout:
+                d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+            else:
+                d.msgbox("Nessun log disponibile", height=5, width=40)
+        elif opzione == "4":
+            result = subprocess.run(["ping", "-c", "4", "8.8.8.8"], capture_output=True, text=True)
+            d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+        elif opzione == "5":
+            break
+
+# Funzione per eseguire script Python
+def esegui_python():
+    file = d.fselect(CURRENT_DIR, height=14, width=48)
+    if file[0] == 0 and file[1]:
+        if file[1].endswith(".py"):
+            input_data = d.inputbox("Input (opzionale):", height=8, width=40)
+            if input_data[0] == 0 and input_data[1]:
+                result = subprocess.run(["python3", file[1]], input=input_data[1], capture_output=True, text=True)
+            else:
+                result = subprocess.run(["python3", file[1]], capture_output=True, text=True)
+            d.textbox_from_str(f"Output:\n{result.stdout}\nErrori:\n{result.stderr}", height=20, width=70)
+            with open(LOG_FILE, "a") as log:
+                log.write(f"Eseguito script Python: {file[1]}\n")
+        else:
+            d.msgbox("Seleziona un file .py", height=5, width=40)
+
+# Funzione per gestione processi
+def gestione_processi():
+    while True:
+        scelta = d.menu("Gestione processi:", choices=[
+            ("1", "Visualizza processi"),
+            ("2", "Termina processo"),
+            ("3", "Torna")
+        ], height=12, width=50, menu_height=3)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione processi: {opzione}\n")
+        if opzione == "1":
+            result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
+            d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+        elif opzione == "2":
+            pid = d.inputbox("PID da terminare:", height=8, width=40)
+            if pid[0] == 0 and pid[1]:
+                try:
+                    subprocess.run(["kill", pid[1]], check=True)
+                    d.msgbox(f"Processo {pid[1]} terminato", height=5, width=40)
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Terminato PID: {pid[1]}\n")
+                except subprocess.CalledProcessError as e:
+                    d.msgbox(f"Errore: {str(e)}", height=5, width=40)
+        elif opzione == "3":
+            break
+
+# Funzione per gestore archivi
+def gestore_archivi():
+    if not check_command("tar"):
+        d.msgbox("tar non è installato. Installalo con 'apk add tar'.", height=5, width=40)
+        return
+    while True:
+        scelta = d.menu("Gestore archivi:", choices=[
+            ("1", "Comprimi file"),
+            ("2", "Decomprimi archivio"),
+            ("3", "Torna")
+        ], height=12, width=50, menu_height=3)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione archivi: {opzione}\n")
+        if opzione == "1":
+            file = d.fselect(CURRENT_DIR, height=14, width=48)
+            if file[0] == 0 and file[1]:
+                arch = d.inputbox("Nome archivio (es. archivio.tar.gz):", height=8, width=40)
+                if arch[0] == 0 and arch[1]:
+                    result = subprocess.run(["tar", "-czf", arch[1], file[1]], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        d.msgbox(f"File compresso in {arch[1]}", height=5, width=40)
+                    else:
+                        d.msgbox(f"Errore: {result.stderr}", height=5, width=40)
+                    with open(LOG_FILE, "a") as log:
+                        log.write(f"Compressi {file[1]} in {arch[1]}\n")
+        elif opzione == "2":
+            arch = d.fselect(CURRENT_DIR, height=14, width=48)
+            if arch[0] == 0 and arch[1]:
+                result = subprocess.run(["tar", "-xzf", arch[1]], capture_output=True, text=True)
+                if result.returncode == 0:
+                    d.msgbox(f"Archivio {arch[1]} decompresso", height=5, width=40)
+                else:
+                    d.msgbox(f"Errore: {result.stderr}", height=5, width=40)
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Decompresso {arch[1]}\n")
+        elif opzione == "3":
+            break
+
+# Funzione per gestore pacchetti
+def gestore_pacchetti():
+    while True:
+        scelta = d.menu("Gestore pacchetti:", choices=[
+            ("1", "Cerca pacchetto"),
+            ("2", "Installa pacchetto"),
+            ("3", "Rimuovi pacchetto"),
+            ("4", "Torna")
+        ], height=12, width=50, menu_height=4)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione pacchetti: {opzione}\n")
+        if opzione == "1":
+            term = d.inputbox("Termine di ricerca:", height=8, width=40)
+            if term[0] == 0 and term[1]:
+                result = subprocess.run(["apk", "search", term[1]], capture_output=True, text=True)
+                d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+        elif opzione == "2":
+            pkg = d.inputbox("Nome pacchetto da installare:", height=8, width=40)
+            if pkg[0] == 0 and pkg[1]:
+                result = subprocess.run(["apk", "add", pkg[1]], capture_output=True, text=True)
+                d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Installato pacchetto: {pkg[1]}\n")
+        elif opzione == "3":
+            pkg = d.inputbox("Nome pacchetto da rimuovere:", height=8, width=40)
+            if pkg[0] == 0 and pkg[1]:
+                result = subprocess.run(["apk", "del", pkg[1]], capture_output=True, text=True)
+                d.textbox_from_str(result.stdout + result.stderr, height=20, width=70)
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"Rimosso pacchetto: {pkg[1]}\n")
+        elif opzione == "4":
+            break
+
+# Funzione per mostrare il log
+def mostra_log():
+    if os.path.exists(LOG_FILE):
+        d.textbox(LOG_FILE, height=20, width=70)
+    else:
+        d.msgbox("Nessun log disponibile", height=5, width=40)
+
+# Funzione di aiuto
+def aiuto():
+    help_text = (
+        "Interfaccia grafica iSH Alpine\n\n"
+        "1. File Manager: esplora e gestisci file\n"
+        "2. Crea file: crea nuovi file\n"
+        "3. Esegui comando: esegui comandi shell\n"
+        "4. Impostazioni: configura sistema\n"
+        "5. Info sistema: dettagli sistema\n"
+        "6. Browser: naviga con lynx (URL o file HTML)\n"
+        "7. MP3: riproduci file audio con mpg123\n"
+        "8. Calcolatrice: calcoli con bc\n"
+        "9. Editor: modifica file con nano\n"
+        "10. Debug: aggiorna e diagnostica\n"
+        "11. Python: esegui script .py\n"
+        "12. Processi: gestisci processi\n"
+        "13. Archivi: comprimi/decomprimi con tar\n"
+        "14. Pacchetti: gestisci pacchetti apk\n"
+        "15. Log: vedi registro azioni\n"
+        "16. Aiuto: questa guida\n"
+        "17. Riavvia: riavvia script\n"
+        "18. Esci: chiudi programma"
+    )
+    d.msgbox(help_text, height=20, width=70)
+
+# Menu principale (Start Menu)
+def main_menu():
+    while True:
+        scelta = d.menu(f"Desktop - Ciao {USER}!", choices=[
+            ("1", "File Manager"),
+            ("2", "Crea un file"),
+            ("3", "Esegui un comando"),
+            ("4", "Impostazioni di sistema"),
+            ("5", "Informazioni di sistema"),
+            ("6", "Browser Internet"),
+            ("7", "Lettore MP3"),
+            ("8", "Calcolatrice"),
+            ("9", "Editor di testo"),
+            ("10", "Debug e aggiornamento"),
+            ("11", "Esegui app Python"),
+            ("12", "Gestione processi"),
+            ("13", "Gestore archivi"),
+            ("14", "Gestore pacchetti"),
+            ("15", "Mostra log"),
+            ("16", "Aiuto"),
+            ("17", "Riavvia script"),
+            ("18", "Esci")
+        ], height=20, width=60, menu_height=18)
+        if scelta[0] == 0:
+            break
+        opzione = scelta[1]
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Scelta opzione menu principale: {opzione}\n")
+        if opzione == "1":
+            file_manager()
+        elif opzione == "2":
+            crea_file()
+        elif opzione == "3":
+            esegui_comando()
+        elif opzione == "4":
+            impostazioni_sistema()
+        elif opzione == "5":
+            info_sistema()
+        elif opzione == "6":
+            browser_internet()
+        elif opzione == "7":
+            lettore_mp3()
+        elif opzione == "8":
+            calcolatrice()
+        elif opzione == "9":
+            editor_testo()
+        elif opzione == "10":
+            debug_aggiornamento()
+        elif opzione == "11":
+            esegui_python()
+        elif opzione == "12":
+            gestione_processi()
+        elif opzione == "13":
+            gestore_archivi()
+        elif opzione == "14":
+            gestore_pacchetti()
+        elif opzione == "15":
+            mostra_log()
+        elif opzione == "16":
+            aiuto()
+        elif opzione == "17":
+            d.msgbox("Riavvio dello script in corso...", height=5, width=40)
+            subprocess.run(["python3", __file__])
+            break
+        elif opzione == "18":
+            d.msgbox(f"Ciao {USER}, alla prossima!", height=5, width=40)
+            with open(LOG_FILE, "a") as log:
+                log.write("Uscita dal programma\n")
+            break
+
+# Avvio del desktop
+if __name__ == "__main__":
+    try:
+        os.chdir(CURRENT_DIR)  # Imposta la directory iniziale
+        main_menu()
+    except KeyboardInterrupt:
+        d.msgbox("Programma terminato dall'utente", height=5, width=40)
+        with open(LOG_FILE, "a") as log:
+            log.write("Programma terminato con Ctrl+C\n")
+    except Exception as e:
+        d.msgbox(f"Errore imprevisto: {str(e)}", height=5, width=40)
+        with open(LOG_FILE, "a") as log:
+            log.write(f"Errore imprevisto: {str(e)}\n")
